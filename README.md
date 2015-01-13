@@ -51,7 +51,7 @@ You can also pass multiple value for the same timestamp.
 
 Available type of metrics are Counter, Timer, Gauge. All use the Record() and RecordWithTs() methods to store and send metics<sup>1</sup>
 
-```go$
+```go
 client.Timer("metric-timer").Record(300)
 client.Gauge("metric-gauge").Record(300)
 client.Counter("metric-counter").Record(300)
