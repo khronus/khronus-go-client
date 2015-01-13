@@ -1,4 +1,4 @@
-package khronusgoapi
+package khronusgoclient
 
 import "testing"
 

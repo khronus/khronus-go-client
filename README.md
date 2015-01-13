@@ -8,14 +8,14 @@ It works by buffering metrics to send them later in a batch way.
 ## Install
 
 ```bash
-    go get -u github.com/despegar/khronus-go-api
+    go get -u github.com/despegar/khronus-go-client
 ```
 
 ## How to use it
 
 #### 1) Create the client
 ```go
-    import . "github.com/despegar/khronus-go-api"
+    import . "github.com/despegar/khronus-go-client"
 
     func main() {
         client := Client{}
@@ -63,7 +63,7 @@ You can also use a channel to send metrics
 
 ```go
 
-    import . "github.com/despegar/khronus-go-api"
+    import . "github.com/despegar/khronus-go-client"
 
     func main() {
 
