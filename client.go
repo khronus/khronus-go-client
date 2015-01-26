@@ -152,7 +152,7 @@ func (c *Client) toJson() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("{\"metrics\":%s}\n", string(js)), err
+	return fmt.Sprintf("{\"metrics\":%s}\n", string(js)), nil
 }
 
 func (c *Client) sender() {
@@ -195,42 +195,40 @@ func (c *Client) sender() {
 					if err != nil {
 						log.Println("Error marshaling json DataPoints", err)
 						// Something really wrong is happening here
+						break
 					}
 
-					fmt.Printf("%s", js)
+					buff := bytes.NewBufferString(js)
 
-					resp, err := client.Post(url, "application/json", bytes.NewBufferString(js))
+					fmt.Printf("%s", buff)
 
-					if resp != nil {
-						// defer Close of Body if response from server
-						defer resp.Body.Close()
-					}
+					resp, err := client.Post(url, "application/json", buff)
 
-					// Could not connect to any server
-					if (err != nil || resp == nil) && key == urlsize-1 {
+					if err != nil {
 						// Only discards data if no servers are responding the request
-						log.Println("Error connecting khronus server")
+						log.Println("Error connecting khronus server : ", url)
 						log.Println(err)
-						rrindex++
-						continue
-					}
-
-					if resp == nil {
-						log.Printf("Error connecting khronus url: %s\n", url)
+						if key == urlsize-1 {
+							rrindex = 0
+						}
 					} else {
 						body, err := ioutil.ReadAll(resp.Body)
+						defer resp.Body.Close()
+						if err != nil {
+							log.Println("Error reading error body")
+							log.Println(err)
+						}
+
 						if resp.StatusCode == 200 {
 							// Be are ok, so let's continue
+							rrindex++
 							break
 						} else {
+							// Could not connect to any server
 							// For anything else ...
 							log.Printf("Error connecting khronus url: %s\n", url)
 							log.Printf("Http Status code : %d\n", resp.StatusCode)
-							if err != nil {
-								log.Println("Error reading error code from server")
-							} else {
-								log.Printf("Http Response : %s\n", bytes.NewBuffer(body))
-							}
+							log.Printf("Http Response : %s\n", bytes.NewBuffer(body))
 						}
 					}
 				}
