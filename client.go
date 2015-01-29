@@ -3,9 +3,9 @@ package khronusgoclient
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"sync"
 	"time"
@@ -14,6 +14,7 @@ import (
 type Client struct {
 	buffer map[string]*Metric
 	mu     sync.RWMutex
+	client *http.Client
 	config *clientConfig
 }
 
@@ -131,12 +132,10 @@ func (c *Client) addMetric(metric *Metric) {
 }
 
 func (c *Client) emptyBuffer() {
-	c.mu.Lock()
-	for k, _ := range c.buffer {
+	for k := range c.buffer {
 		//c.buffer[k].Measurements = []Measure{}
 		delete(c.buffer, k)
 	}
-	c.mu.Unlock()
 }
 
 func (c *Client) toJson() (string, error) {
@@ -163,8 +162,8 @@ func (c *Client) sender() {
 	tick := time.Tick(time.Duration(c.config.interval) * time.Second)
 	c.config.mu.Unlock()
 
-	client := &http.Client{}
-	client.Timeout = time.Duration(5) * time.Second
+	c.client = &http.Client{}
+	c.client.Timeout = time.Duration(5) * time.Second
 
 	for {
 		select {
@@ -174,65 +173,80 @@ func (c *Client) sender() {
 			}
 		case <-tick:
 			{
+				// [FIXME]
 				c.config.mu.Lock()
 				urlsize = len(c.config.urls)
-				tick = time.Tick(time.Duration(c.config.interval) * time.Second)
+				// tick = time.Tick(time.Duration(c.config.interval) * time.Second)
 				c.config.mu.Unlock()
 
 				if len(c.buffer) == 0 {
 					continue
 				}
 
-				fmt.Println("Tick")
-				for key, _ := range c.config.urls {
-					url := c.config.urls[(key+rrindex)%urlsize]
+				c.mu.Lock()
+				js, err := c.toJson()
+				c.emptyBuffer()
+				c.mu.Unlock()
 
-					c.mu.Lock()
-					js, err := c.toJson()
-					c.mu.Unlock()
-					c.emptyBuffer()
+				if err != nil {
+					fmt.Println("Error marshaling json DataPoints", err)
+					// Something really wrong is happening here
+					break
+				}
 
-					if err != nil {
-						log.Println("Error marshaling json DataPoints", err)
-						// Something really wrong is happening here
-						break
+				for _ = range c.config.urls {
+					if rrindex > urlsize-1 {
+						rrindex = 0
 					}
 
-					buff := bytes.NewBufferString(js)
+					c.mu.Lock()
+					url := c.config.urls[rrindex]
+					c.mu.Unlock()
 
-					fmt.Printf("%s", buff)
+					err = c.postData(url, &js)
 
-					resp, err := client.Post(url, "application/json", buff)
+					rrindex++
 
 					if err != nil {
-						// Only discards data if no servers are responding the request
-						log.Println("Error connecting khronus server : ", url)
-						log.Println(err)
-						if key == urlsize-1 {
-							rrindex = 0
-						}
+						fmt.Println("Error connecting khronus server : ", url)
+						fmt.Println(err)
 					} else {
-						body, err := ioutil.ReadAll(resp.Body)
-						defer resp.Body.Close()
-						if err != nil {
-							log.Println("Error reading error body")
-							log.Println(err)
-						}
-
-						if resp.StatusCode == 200 {
-							// Be are ok, so let's continue
-							rrindex++
-							break
-						} else {
-							// Could not connect to any server
-							// For anything else ...
-							log.Printf("Error connecting khronus url: %s\n", url)
-							log.Printf("Http Status code : %d\n", resp.StatusCode)
-							log.Printf("Http Response : %s\n", bytes.NewBuffer(body))
-						}
+						break
 					}
 				}
 			}
 		}
 	}
+}
+
+func (c *Client) postData(url string, js *string) error {
+
+	buff := bytes.NewBufferString(*js)
+
+	resp, err := c.client.Post(url, "application/json", buff)
+
+	if err != nil {
+		return err
+		// Only discards data if no servers are responding the request
+	} else {
+		body, err := ioutil.ReadAll(resp.Body)
+		defer resp.Body.Close()
+		if err != nil {
+			fmt.Println("Error reading error body")
+			return err
+		}
+
+		if resp.StatusCode == 200 {
+			// Be are ok, so let's continue
+			return nil
+		} else {
+			// Could not connect to any server
+			// For anything else ...
+			fmt.Printf("Error connecting khronus url: %s\n", url)
+			fmt.Printf("Http Status code : %d\n", resp.StatusCode)
+			fmt.Printf("Http Response : %s\n", bytes.NewBuffer(body))
+			return errors.New(string(body))
+		}
+	}
+
 }
